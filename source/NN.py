@@ -43,7 +43,7 @@ class NN(object):
     if Option.dataSet == 'CIFAR10':
       out = self._VGG7()
     elif Option.dataSet == 'CIFAR100':
-      out = self._ResNet29()
+      out = self._ResNet29(resmode=Option.resmode)
     else:
       assert False, 'None network model is defined!'
 
