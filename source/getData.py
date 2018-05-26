@@ -4,7 +4,7 @@ import Option
 
 def preprocess(x, train=False):
   dataSet = Option.dataSet
-  if dataSet == 'CIFAR10':
+  if dataSet in ['CIFAR10','CIFAR100']:
     if train:
       x = tf.image.resize_image_with_crop_or_pad(x, 40, 40)
       x = tf.random_crop(x, [32, 32, 3])

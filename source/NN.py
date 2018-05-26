@@ -42,6 +42,8 @@ class NN(object):
   def build_graph(self):
     if Option.dataSet == 'CIFAR10':
       out = self._VGG7()
+    elif Option.dataSet == 'CIFAR100':
+      out = self._ResNet29()
     else:
       assert False, 'None network model is defined!'
 
@@ -92,6 +94,107 @@ class NN(object):
 
     return x
 
+  def _ResNet29(self, resmode=1, trunkmult=1.0, lastc=1024):
+    x = self.H[-1]
+    list_lastc = [ lastc/4,lastc/2,lastc ]
+    list_trunkc = [ int(item*trunkmult) for item in list_lastc ]   
+
+    with tf.variable_scope('RESNET'):
+      with tf.variable_scope('STEM'):
+        x = self._conv(x, 3, 64)
+        x = self._activation(x)
+      with tf.variable_scope('B11'):
+        y = self._conv(x, 1, list_lastc[0], stride=2, name='c11')
+        y = self._activation(y)
+        x = self._conv(x, 1, list_trunkc[0], stride=2, name='c21')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[0],name='c22')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[0],name='c23')
+        x = tf.add(x, y)
+        x = self._activation(x)
+      with tf.variable_scope('B12'):
+        y = x
+        x = self._conv(x, 1, list_trunkc[0], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[0], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[0], name='c13')
+        x = tf.add( y * resmode , x )
+        x = self._activation(x)
+      with tf.variable_scope('B13'):
+        y = x
+        x = self._conv(x, 1, list_trunkc[0], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[0], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[0], name='c13')
+        x = tf.add( y * resmode , x)
+        x = self._activation(x)
+      with tf.variable_scope('B21'):
+        y = self._conv(x, 1, list_lastc[1], stride=2, name='c11')
+        y = self._activation(y)
+        x = self._conv(x, 1, list_trunkc[1], stride=2, name='c21')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[1], name='c22')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[1], name='c23')
+        x = tf.add(y , x)
+        x = self._activation(x)
+      with tf.variable_scope('B22'):
+        y = x
+        x = self._conv(x, 1, list_trunkc[1], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[1], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[1], name='c13')
+        x = tf.add( y * resmode , x )
+        x = self._activation(x)
+      with tf.variable_scope('B23'):
+        y = x
+        x = self._conv(x, 1, list_trunkc[1], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[1], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[1], name='c13')
+        x = self._activation(x)
+      with tf.variable_scope('B31'):
+        y = self._conv(x, 1, list_lastc[2], stride=2, name='c11')
+        y = self._activation(y)
+        x = self._conv(x, 1, list_trunkc[2], stride=2, name='c21')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[2], name='c22')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[2], name='c23')
+        x = tf.add( y, x)
+        x = self._activation(x)
+      with tf.variable_scope('B32'):
+        y = x
+        x = self._conv(x, 1, list_trunkc[2], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[2], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[2], name='c13')
+        x = self._activation(x)
+      with tf.variable_scope('B33'):
+        y = x 
+        x = self._conv(x, 1, list_trunkc[2], name='c11')
+        x = self._activation(x)
+        x = self._conv(x, 3, list_trunkc[2], name='c12')
+        x = self._activation(x)
+        x = self._conv(x, 1, list_lastc[2], name='c13')
+        x = self._activation(x)
+    
+    x = self._reshape(x)
+    with tf.variable_scope('FC'):
+      x = self._fc(x, 1024, name='fc0')
+      x = self._activation(x)
+      x = self._fc(x, self.shapeY[1], name='fc1')
+
+    # for last layer(first layer in backpro) error input quantization
+    with tf.variable_scope('last'):
+      x = self._QE(x)        
+    return x
 
   def _loss(self, out, labels):
     labels = tf.cast(labels,tf.float32)
@@ -102,6 +205,7 @@ class NN(object):
       else:
         loss = self.lossFunc(labels, out)
       if self.L2 > 0:
+        print loss.shape, self._L2().shape
         loss += self.L2 * self._L2()
 
     # error calculation

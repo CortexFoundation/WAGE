@@ -6,15 +6,15 @@ Time = time.strftime('%Y-%m-%d', time.localtime())
 # Notes = 'vgg7 2888'
 Notes = 'temp'
 
-GPU = [0]
+GPU = [0,1,2,3,4,5,6,7]
 batchSize = 128
 
-dataSet = 'CIFAR10'
+dataSet = 'CIFAR100'
 
 loadModel = None
 # loadModel = '../model/' + '2017-12-06' + '(' + 'vgg7 2888' + ')' + '.tf'
-saveModel = None
-# saveModel = '../model/' + Time + '(' + Notes + ')' + '.tf'
+# saveModel = None
+saveModel = '../model/' + Time + '(' + Notes + ')' + '.tf'
 
 bitsW = 2  # bit width of we ights
 bitsA = 8  # bit width of activations
@@ -26,7 +26,7 @@ bitsR = 16  # bit width of randomizer
 lr = tf.Variable(initial_value=0., trainable=False, name='lr', dtype=tf.float32)
 lr_schedule = [0, 8, 200, 1,250,1./8,300,0]
 
-L2 = 0
+L2 = 0 #1.0/1024
 
 lossFunc = 'SSE'
 # lossFunc = tf.losses.softmax_cross_entropy
