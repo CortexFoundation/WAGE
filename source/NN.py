@@ -6,7 +6,7 @@ import myInitializer
 
 
 class NN(object):
-  def __init__(self, X, Y, training=True, global_step=None):
+  def __init__(self, X, Y, training=True, global_step=None,GPU=0):
 
     self.shapeX = X.get_shape().as_list()
     self.shapeY = Y.get_shape().as_list()
@@ -32,7 +32,7 @@ class NN(object):
       factor=1.0, mode='FAN_IN', uniform=True)
 
     self.is_training = training
-    self.GPU = Option.GPU
+    self.GPU = GPU
 
     self.W = []
     self.W_q = []

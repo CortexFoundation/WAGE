@@ -4,7 +4,6 @@ import tensorflow as tf
 debug = False
 Time = time.strftime('%Y-%m-%d', time.localtime())
 # Notes = 'vgg7 2888'
-
 resmode = 0.25 # 4.0, 2.0, 1.0, 0.5, 0.25
 
 bitsW = 8  # bit width of weights
@@ -12,12 +11,12 @@ bitsA = 8  # bit width of activations
 bitsG = 8  # bit width of gradients
 bitsE = 8  # bit width of errors
 bitsR = 16  # bit width of randomizer
-
+MOVING_AVERAGE_DECAY = 0.9999
 Notes = 'ResNet29_'+str(resmode)+'_'+''.join([str(item) for item in [bitsW, bitsA, bitsG, bitsE]])
 print Notes
 #Notes = 'temp'
-
-GPU = [0]
+TOWER_NAME = 'tower'
+GPU = [0,1,2,3]
 batchSize = 128
 
 dataSet = 'CIFAR100'
@@ -26,6 +25,7 @@ loadModel = None
 # loadModel = '../model/' + '2017-12-06' + '(' + 'vgg7 2888' + ')' + '.tf'
 # saveModel = None
 saveModel = '../model/' + Time + '(' + Notes + ')' + '.tf'
+trainDir = '../model'
 
 
 lr = tf.Variable(initial_value=0., trainable=False, name='lr', dtype=tf.float32)
