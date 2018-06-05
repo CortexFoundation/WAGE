@@ -42,7 +42,7 @@ L2 = 0 #1.0/1024
 
 lossFunc = 'SSE'
 # lossFunc = tf.losses.softmax_cross_entropy
-optimizer = tf.train.GradientDescentOptimizer(1)  # lr is controlled in Quantize.G
+# optimizer = tf.train.GradientDescentOptimizer(1)  # lr is controlled in Quantize.G
 # optimizer = tf.train.MomentumOptimizer(lr, 0.9, use_nesterov=True)
 
 # shared variables, defined by other files

@@ -6,6 +6,7 @@ import Option
 import Log
 import getData
 import Quantize
+import horovod as hvd
 from tqdm import tqdm
 
 # for single GPU quanzation
@@ -30,6 +31,7 @@ def showVariable(keywords=None):
   return Vars_key
 
 def main():
+  hvd.init()
   # get Option
   GPU = Option.GPU
   batchSize = Option.batchSize
@@ -49,32 +51,35 @@ def main():
   batchNumTrain = numTrain / batchSize
   batchNumTest = numTest / 100
 
-  optimizer = Option.optimizer
+  # optimizer = Option.optimizer
+  optimizer = tf.train.GradientDescentOptimizer(1 * hvd.size())
+  optimizer = hvd.DistributedOptimizer(optimizer)
+  hooks = [hvd.BroadcastGlobalVariablesHook(0)]
   global_step = tf.get_variable('global_step', [], dtype=tf.int32, initializer=tf.constant_initializer(0), trainable=False)
   Net = []
 
 
   # on my machine, alexnet does not fit multi-GPU training
   # for single GPU
-  with tf.device('/gpu:%d' % GPU[0]):
-    Net.append(NN.NN(batchTrainX, batchTrainY, training=True, global_step=global_step))
-    lossTrainBatch, errorTrainBatch = Net[-1].build_graph()
-    update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # batchnorm moving average update ops (not used now)
 
-    # since we quantize W at the beginning and the update delta_W is quantized,
-    # there is no need to quantize W every iteration
-    # we just clip W after each iteration for speed
-    update_op += Net[0].W_clip_op
+  Net.append(NN.NN(batchTrainX, batchTrainY, training=True, global_step=global_step))
+  lossTrainBatch, errorTrainBatch = Net[-1].build_graph()
+  update_op = tf.get_collection(tf.GraphKeys.UPDATE_OPS)  # batchnorm moving average update ops (not used now)
 
-    gradTrainBatch = optimizer.compute_gradients(lossTrainBatch)
+  # since we quantize W at the beginning and the update delta_W is quantized,
+  # there is no need to quantize W every iteration
+  # we just clip W after each iteration for speed
+  update_op += Net[0].W_clip_op
 
-    gradTrainBatch_quantize = quantizeGrads(gradTrainBatch)
-    with tf.control_dependencies(update_op):
-      train_op = optimizer.apply_gradients(gradTrainBatch_quantize, global_step=global_step)
+  gradTrainBatch = optimizer.compute_gradients(lossTrainBatch)
 
-    tf.get_variable_scope().reuse_variables()
-    Net.append(NN.NN(batchTestX, batchTestY, training=False))
-    _, errorTestBatch = Net[-1].build_graph()
+  gradTrainBatch_quantize = quantizeGrads(gradTrainBatch)
+  with tf.control_dependencies(update_op):
+    train_op = optimizer.apply_gradients(gradTrainBatch_quantize, global_step=global_step)
+
+  tf.get_variable_scope().reuse_variables()
+  Net.append(NN.NN(batchTestX, batchTestY, training=False))
+  _, errorTestBatch = Net[-1].build_graph()
 
 
 
@@ -82,11 +87,15 @@ def main():
 
   # Build an initialization operation to run below.
   config = tf.ConfigProto()
+  config.gpu_options.visible_device_list = str(hvd.local_rank())
   config.gpu_options.allow_growth = True
   config.allow_soft_placement = True
   config.log_device_placement = False
-  sess = Option.sess = tf.InteractiveSession(config=config)
+  checkpoint_dir = '/tmp/train_logs' if hvd.rank() == 0 else None
+  sess = tf.train.MonitoredTrainingSession(checkpoint_dir=checkpoint_dir, config=config,hooks=hooks)
+  # sess = Option.sess = tf.InteractiveSession(config=config)
   sess.run(tf.global_variables_initializer())
+  
   saver = tf.train.Saver(max_to_keep=None)
   # Start the queue runners.
   tf.train.start_queue_runners(sess=sess)
@@ -131,36 +140,37 @@ def main():
     lossTotal = 0.
     errorTotal = 0
     t0 = time.time()
-    for batchNum in tqdm(xrange(batchNumTrain), desc='Epoch: %03d' % epoch, leave=False, smoothing=0.1):
-      if Option.debug is False:
-        _, loss_delta, error_delta = sess.run([train_op, lossTrainBatch, errorTrainBatch])
-      else:
-        _, loss_delta, error_delta, H, W, W_q, gradH, gradW, gradW_q=\
-        sess.run([train_op, lossTrainBatch, errorTrainBatch, Net[0].H, Net[0].W, Net[0].W_q, Net[0].gradsH, Net[0].gradsW, gradTrainBatch_quantize])
+    while not mon_sess.should_stop():
+      for batchNum in tqdm(xrange(batchNumTrain), desc='Epoch: %03d' % epoch, leave=False, smoothing=0.1):
+        if Option.debug is False:
+          _, loss_delta, error_delta = sess.run([train_op, lossTrainBatch, errorTrainBatch])
+        else:
+          _, loss_delta, error_delta, H, W, W_q, gradH, gradW, gradW_q=\
+          sess.run([train_op, lossTrainBatch, errorTrainBatch, Net[0].H, Net[0].W, Net[0].W_q, Net[0].gradsH, Net[0].gradsW, gradTrainBatch_quantize])
 
-      lossTotal += loss_delta
-      errorTotal += error_delta
+        lossTotal += loss_delta
+        errorTotal += error_delta
 
-    lossTotal /= batchNumTrain
-    errorTotal /= batchNumTrain
+      lossTotal /= batchNumTrain
+      errorTotal /= batchNumTrain
 
-    print 'Loss: %.4f Train: %.4f' % (lossTotal, errorTotal),
+      print 'Loss: %.4f Train: %.4f' % (lossTotal, errorTotal),
 
-    # get test error
-    errorTest = getErrorTest()
-    print 'Test: %.4f FPS: %d' % (errorTest, numTrain / (time.time() - t0)),
+      # get test error
+      errorTest = getErrorTest()
+      print 'Test: %.4f FPS: %d' % (errorTest, numTrain / (time.time() - t0)),
 
-    if epoch == 0:
-      errorTestBest = errorTest
-    if errorTest < errorTestBest:
-      if Option.saveModel is not None:
-        saver.save(sess, Option.saveModel)
-        print 'S',
-    if errorTest < errorTestBest:
-      errorTestBest = errorTest
-      print 'BEST',
+      if epoch == 0:
+        errorTestBest = errorTest
+      if errorTest < errorTestBest:
+        if Option.saveModel is not None:
+          saver.save(sess, Option.saveModel)
+          print 'S',
+      if errorTest < errorTestBest:
+        errorTestBest = errorTest
+        print 'BEST',
 
-    print ''
+      print ''
 
 
 if __name__ == '__main__':
